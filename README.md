@@ -1,216 +1,115 @@
-# RAG-System-with-Knowledge-Graphs
-Demystifying LLMs: My Hands-On Journey Building a RAG System with Knowledge Graphs!
-Graph RAG with LangChain and MongoDB
-This code cell sets up and runs a Graph RAG (Retrieval Augmented Generation) system using LangChain and MongoDB. It demonstrates how to extract entities from a user query, retrieve relevant information from a MongoDB knowledge graph based on those entities, and then use a Large Language Model (LLM) to answer the user's question based on the retrieved graph data.
+# RAG-Powered QA System with MongoDB Knowledge Graph & LangChain
 
-Imports and Initialization
-The cell begins by importing necessary libraries and modules:
+This project implements a **Retrieval Augmented Generation (RAG)** based Question-Answering (QA) system. It leverages a structured **Knowledge Graph (KG) stored in MongoDB Atlas** to provide precise, factual grounding for a Large Language Model (LLM), aiming to generate accurate and context-rich answers while significantly mitigating common LLM "hallucinations."
 
-from langchain_community.llms import HuggingFaceEndpoint
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
-from typing import List, Dict, Any
-import asyncio
-import os
-import re
-from pymongo import MongoClient
-from langchain_mongodb.graphrag.graph import MongoDBGraphStore
-Use code with caution
-HuggingFaceEndpoint: Used to connect to a Hugging Face LLM hosted on their inference API.
-ChatPromptTemplate, SystemMessage, HumanMessage: Used to create structured prompts for the LLM.
-BaseModel, Field: Used for data validation (although not strictly used in the final RAG chain in this cell, they are common in LangChain).
-JsonOutputParser, StrOutputParser: Used to parse the output from the LLM. StrOutputParser is used here to get a simple string response.
-List, Dict, Any: Standard Python typing hints.
-asyncio: Used to run asynchronous code, particularly the LLM invocations.
-os: Used to access environment variables for API keys and connection strings.
-re: Used for regular expressions, specifically to escape special characters in entity names for MongoDB queries.
-MongoClient: The standard Python driver for interacting with MongoDB.
-MongoDBGraphStore: A LangChain component specifically designed to interact with a knowledge graph stored in MongoDB.
-Next, it re-initializes the MongoDBGraphStore and the LLM for generating text:
+This repository represents a hands-on learning journey into building robust AI applications, tackling real-world integration challenges, and understanding the practicalities of modern LLM pipelines.
 
-ATLAS_DB_NAME = "sample_mflix"
-ATLAS_COLLECTION_NAME = "comments"
+## ✨ Features
 
-graph_store = MongoDBGraphStore(
-    collection_name=ATLAS_COLLECTION_NAME,
-    connection_string=os.environ["MONGO_URI"],
-    database_name=ATLAS_DB_NAME,
-    entity_extraction_model=llm_generation
-)
+* **Intelligent Knowledge Graph Management:** Stores and retrieves structured product information (entities like products, features, companies, and their relationships) in MongoDB Atlas using LangChain's `MongoDBGraphStore`.
+* **LLM-Powered Entity Extraction:** Utilizes a Hugging Face LLM to accurately extract key entities from user's natural language queries.
+* **Contextual Graph Retrieval:** Efficiently queries the MongoDB knowledge graph based on extracted entities to fetch highly relevant contextual information.
+* **Retrieval Augmented Generation (RAG):** Combines the retrieved factual context with the original user question, feeding it to an LLM for grounded and accurate answer generation.
+* **Flexible LLM Integration:** Designed to work with various Hugging Face LLMs via the Inference API, allowing for model experimentation.
 
-# Initialize LLM for query understanding and response generation
-llm_generation = HuggingFaceEndpoint(
-    repo_id=LLM_MODEL,
-    temperature=0.7,
-    huggingface_api_token=os.environ["HF_TOKEN"],
-    max_new_tokens=500
-)
-Use code with caution
-This part sets the MongoDB database and collection names and then creates instances of MongoDBGraphStore and HuggingFaceEndpoint. The llm_generation instance is used both for entity extraction within the graph_store and for the final answer generation.
+## 🚀 Technologies Used
 
-Entity Extraction
-This section defines how the system identifies key concepts or "entities" from the user's input question:
+* **Python 3.x:** The core programming language.
+* **LangChain:** The framework orchestrating the LLM, RAG, and graph database integrations.
+    * `langchain-core`
+    * `langchain-community`
+    * `langchain-mongodb` (specifically `langchain_mongodb.graphrag.graph.MongoDBGraphStore`)
+* **MongoDB Atlas:** Cloud database service for hosting the Knowledge Graph.
+* **Hugging Face Inference API:** For accessing powerful LLMs (e.g., Zephyr-7b-beta, Flan-T5).
+* **`pymongo`:** Python driver for MongoDB.
+* **`python-dotenv`:** For secure management of environment variables.
+* **Jupyter Notebook / Google Colab:** The development environment for interactive execution.
 
-# 1. Define a prompt for extracting entities from the user's query
-entity_extraction_prompt = ChatPromptTemplate.from_messages([
-    SystemMessage(content="You are an assistant that extracts key entities (like product names, features, companies) from user questions to aid in graph traversal. List only the most relevant, distinct entities, one per line, and nothing else."),
-    HumanMessage(content="Question: {question}")
-])
-entity_extractor_chain = entity_extraction_prompt | llm_generation | StrOutputParser()
-Use code with caution
-entity_extraction_prompt: This is a ChatPromptTemplate that instructs the LLM (via the SystemMessage) to act as an entity extractor and then provides the user's question as a HumanMessage.
-entity_extractor_chain: This is a simple LangChain "chain" created by piping the entity_extraction_prompt, the llm_generation model, and a StrOutputParser. When this chain is invoked with a user question, it will format the prompt, send it to the LLM, and the LLM's response (which is expected to be a list of entities) will be parsed into a string.
-Graph Data Retrieval
-The core logic for fetching relevant information from the MongoDB graph is encapsulated in the get_relevant_graph_data asynchronous function:
+## 🛠️ Setup and Installation
 
-# 2. Define a function to retrieve relevant graph data from MongoDBGraphStore
-async def get_relevant_graph_data(query: str):
-    print(f"\nUser query: {query}")
-    extracted_entities_str = await entity_extractor_chain.ainvoke({"question": query})
+This project is designed to be run interactively, ideally within a Google Colab or local Jupyter Notebook environment.
 
-    # --- REFINED ENTITY EXTRACTION LOGIC ---
-    extracted_entities = []
-    for line in extracted_entities_str.split('\n'):
-        line = line.strip()
-        if line.startswith("Assistant:"):
-            entities_in_line = line[len("Assistant:"):].strip()
-            if ',' in entities_in_line:
-                extracted_entities.extend([e.strip() for e in entities_in_line.split(',') if e.strip()])
-            elif entities_in_line:
-                extracted_entities.append(entities_in_line)
-        elif line and "Question:" not in line and "{" not in line and "}" not in line and "Assistant:" not in line:
-            extracted_entities.append(line)
+### Prerequisites
 
-    extracted_entities = [e for e in extracted_entities if e]
-    extracted_entities = list(set(extracted_entities))
+* A **MongoDB Atlas account** with a deployed cluster.
+    * Ensure you have a MongoDB Connection String (SRV format is recommended).
+    * Identify your desired Database Name and Collection Name within your Atlas cluster.
+* A **Hugging Face API Token** (available from your Hugging Face profile settings).
+* Python 3.9+ installed.
 
-    print(f"Parsed entities from query: {extracted_entities}")
-    # --- END OF REFINED ENTITY EXTRACTION LOGIC ---
+### Steps to Get Started
 
+1.  **Clone the Repository:**
+    ```bash
+    git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+    cd your-repo-name
+    ```
+    *(Replace `your-username/your-repo-name` with your actual GitHub repository details).*
 
-    if not extracted_entities:
-        return "No specific entities extracted from the query. Cannot perform graph traversal."
+2.  **Set Up Environment Variables:**
+    * Create a file named `.env` in the root directory of your cloned repository.
+    * Add the following variables to your `.env` file, replacing the placeholders with your actual credentials:
+        ```dotenv
+        MONGO_URI="mongodb+srv://<username>:<password>@<cluster-url>/<database-name>?retryWrites=true&w=majority"
+        HF_API_TOKEN="hf_<your_huggingface_api_token>"
+        ```
+        * **Important:** The `<database-name>` in `MONGO_URI` is crucial but should **not** be the `ATLAS_DB_NAME` you'll use in Cell 4 for the graph store. It's usually the default database the connection string points to, or left blank. Your `ATLAS_DB_NAME` and `ATLAS_COLLECTION_NAME` will be specified explicitly in the notebook (Cell 4).
 
-    temp_client = None
-    try:
-        temp_client = MongoClient(os.environ["MONGO_URI"])
-        temp_db = temp_client["sample_mflix"]
-        collection = temp_db["comments"]
-    except Exception as e:
-        if temp_client:
-            temp_client.close()
-        raise RuntimeError(f"Failed to connect to MongoDB for graph data retrieval: {e}")
+3.  **Install Dependencies:**
+    * Create a `requirements.txt` file in your repository with the following content:
+        ```
+        langchain-core
+        langchain-community
+        langchain-mongodb
+        pymongo
+        python-dotenv
+        jupyter # Optional, if you plan to run locally
+        ```
+    * Create and activate a Python virtual environment (highly recommended):
+        ```bash
+        python3 -m venv .venv
+        source .venv/bin/activate # For macOS/Linux
+        # .venv\Scripts\activate # For Windows CMD
+        # .venv\Scripts\Activate.ps1 # For Windows PowerShell
+        ```
+    * Install the dependencies:
+        ```bash
+        pip install -r requirements.txt
+        ```
 
-    relevant_info = []
-    processed_ids = set()
+## 🚀 Usage (Jupyter/Google Colab Notebook Workflow)
 
-    for entity_name in extracted_entities:
-        escaped_entity_name = re.escape(entity_name)
+The core logic and execution flow are contained within the Jupyter/Google Colab notebook (e.g., `rag_qa_system.ipynb`).
 
-        nodes = collection.find({
-            "$or": [
-                {"properties.name": {"$regex": escaped_entity_name, "$options": "i"}},
-                {"_label": {"$regex": escaped_entity_name, "$options": "i"}}
-            ]
-        })
+1.  **Open the Notebook:**
+    * Upload `rag_qa_system.ipynb` to Google Colab, or open it with Jupyter if running locally.
 
-        for node in nodes:
-            node_id = str(node["_id"])
-            if node_id not in processed_ids:
-                props = node.get("properties", {})
-                relevant_info.append(f"Node: {node.get('_label', 'Unknown Type')}: {props.get('name', 'N/A')}, Description: {props.get('description', 'N/A')}")
-                processed_ids.add(node_id)
+2.  **Execute Cells Sequentially:**
+    * **Cell 1:** Installs required libraries (e.g., `langchain-mongodb`).
+    * **Cell 2:** Loads environment variables (`MONGO_URI`, `HF_API_TOKEN`) from your `.env` file.
+    * **Cell 3:** Defines sample raw documents (`docs`) that will be ingested into the knowledge graph.
+    * **Cell 4:**
+        * Initializes your chosen LLM (e.g., `HuggingFaceH4/zephyr-7b-beta`, `google/flan-t5-base`) via `HuggingFaceEndpoint`.
+        * Defines `ATLAS_DB_NAME` and `ATLAS_COLLECTION_NAME` which **must match the database and collection names you intend to use in your MongoDB Atlas cluster for the knowledge graph.**
+        * Initializes `MongoDBGraphStore`, crucially passing the LLM as `entity_extraction_model` (a new requirement in recent `langchain-mongodb` versions).
+    * **Cell 5:** Defines the functions for ingesting documents and extracting graph data.
+    * **Cell 6:** Executes the ingestion process, populating your MongoDB Knowledge Graph.
+    * **Cell 7:**
+        * Defines `get_relevant_graph_data` for efficient graph querying (including `re.escape` for robust regex handling).
+        * Sets up the RAG `qa_prompt` and constructs the `rag_chain`.
+        * Includes `run_qa_tests` to demonstrate the system with predefined questions.
+    * **Cell 8:** Executes `run_qa_tests()` to show the QA system in action.
 
-            relationships = collection.find({
-                "$or": [
-                    {"_from": node_id},
-                    {"_to": node_id}
-                ]
-            })
-            for rel in relationships:
-                rel_id = str(rel["_id"])
-                if rel_id not in processed_ids:
-                    source_node = collection.find_one({"_id": rel["_from"]})
-                    target_node = collection.find_one({"_id": rel["_to"]})
+## 📈 Future Enhancements
 
-                    if source_node and target_node:
-                        source_name = source_node.get("properties", {}).get("name", "N/A")
-                        target_name = target_node.get("properties", {}).get("name", "N/A")
-                        rel_type = rel.get("_label", "UNKNOWN_RELATIONSHIP")
-                        rel_props = rel.get("properties", {})
-                        rel_desc = rel_props.get("description", "N/A")
+* **Interactive UI:** Develop a simple front-end using Streamlit or Gradio for a more user-friendly experience.
+* **Advanced Graph Queries:** Implement more complex traversal patterns for richer contextual retrieval.
+* **Error Handling & Logging:** Enhance robustness with more comprehensive error handling and logging.
+* **Performance Benchmarking:** Measure and optimize the latency and accuracy of the RAG pipeline.
+* **Fine-tuning LLM:** Explore fine-tuning smaller LLMs for domain-specific entity extraction or answer generation.
 
-                        relevant_info.append(f"Relationship: {source_name} --({rel_type})--> {target_name}, Desc: {rel_desc}")
-                        processed_ids.add(rel_id)
+## 🤝 Contributing
 
-    if not relevant_info:
-        return "No relevant information found in the knowledge graph for these entities."
+Contributions are welcome! If you have suggestions for improvements, feature requests, or bug reports, please open an issue or submit a pull request.
 
-    unique_relevant_info = list(dict.fromkeys(relevant_info))
-
-    if temp_client:
-        temp_client.close()
-
-    return "\n".join(unique_relevant_info)
-Use code with caution
-The function takes the user query as input.
-It first uses the entity_extractor_chain to get a list of entities from the query.
-Refined Entity Extraction Logic: This block parses the LLM's output to extract only the actual entities, handling potential conversational elements or unexpected formatting from the LLM.
-If no entities are found, it returns a message indicating that graph traversal cannot be performed.
-It then establishes a direct connection to the MongoDB collection designated for the graph.
-It iterates through the extracted entities:
-For each entity, it searches the collection for nodes where the properties.name or the node's label (_label) matches the entity name (case-insensitive regex search).
-For each matching node found, it adds the node's information to a list (relevant_info) and tracks its ID in processed_ids to avoid duplicates.
-It then searches for relationships (_from or _to fields) connected to the current node's ID.
-For each connected relationship, it retrieves the source and target nodes, formats the relationship information (source node name, relationship type, target node name, relationship description), adds it to relevant_info, and tracks the relationship ID in processed_ids.
-Finally, it removes any duplicate information from relevant_info and returns the unique information as a single string, closing the MongoDB connection before returning.
-RAG Chain Definition
-This part defines the overall Retrieval Augmented Generation (RAG) process:
-
-# 3. Define the RAG chain
-qa_prompt = ChatPromptTemplate.from_messages([
-    SystemMessage(content="You are a helpful assistant that answers questions based on the provided knowledge graph context. If the answer is not in the context, state that you don't have enough information."),
-    HumanMessage(content="Knowledge Graph Context:\n{context}\n\nQuestion: {question}")
-])
-
-rag_chain = (
-    {"context": get_relevant_graph_data, "question": lambda x: x["question"]}
-    | qa_prompt
-    | llm_generation
-    | StrOutputParser()
-)
-Use code with caution
-qa_prompt: This is a ChatPromptTemplate designed for the final answer generation. It includes a SystemMessage instructing the LLM to answer based only on the provided context and a HumanMessage that includes the context (the retrieved graph data) and the original question.
-rag_chain: This is the main LangChain chain that orchestrates the RAG process:
-{"context": get_relevant_graph_data, "question": lambda x: x["question"]}: This is a dictionary that defines the inputs for the next step (qa_prompt). It calls the get_relevant_graph_data function to get the context based on the original question.
-| qa_prompt: The output of the previous step (the dictionary containing context and question) is passed to the qa_prompt to create the final prompt for the LLM.
-| llm_generation: The generated prompt is sent to the llm_generation model to produce an answer.
-| StrOutputParser(): The LLM's output is parsed into a simple string.
-Running the QA Tests
-The final part of the cell defines and runs a set of test questions:
-
-async def run_qa_tests():
-    questions = [
-        "What are the features of EcoCharge Pro?",
-        "How much does the AquaFilter Max cost and what is its purpose?",
-        "What devices is the GlowBulb Smart Light compatible with?",
-        "How can I get support for EcoCharge Pro?",
-        "What is the warranty for EcoCharge Pro?",
-        "Tell me about a product called SmartHome Hub."
-    ]
-
-    for q in questions:
-        response = await rag_chain.ainvoke({"question": q})
-        print(f"\n--- Question: {q} ---")
-        print(f"--- Answer: {response} ---\n")
-
-# Run the QA tests
-await run_qa_tests()
-Use code with caution
-run_qa_tests(): This asynchronous function iterates through a predefined list of questions.
-For each question, it invokes the rag_chain using await rag_chain.ainvoke({"question": q}). The ainvoke method is used because the get_relevant_graph_data function is asynchronous.
-The response from the rag_chain (the LLM's answer) is then printed along with the original question.
-await run_qa_tests(): This line executes the run_qa_tests asynchronous function, starting the process of asking questions and printing the generated answers.
-In summary, this cell orchestrates a process where user questions are analyzed to find key entities. These entities are then used to query a MongoDB knowledge graph to retrieve relevant facts (nodes and relationships). Finally, the retrieved facts are provided as context to an LLM, which generates an answer to the original question based on that context.
+---
